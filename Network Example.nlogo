@@ -1,4 +1,139 @@
-globals [ selected ]
+extensions [table]
+
+turtles-own [
+  fact-ids ;; list of facts this agent belong to
+]
+
+globals [
+  facts-table ;; all facts are stored here
+  selected
+  ; controlling colors
+  color-row
+  color-col
+  ; controlling shapes of links
+  all-shapes
+  last-shape-idx
+]
+
+to populate-facts
+  ;; hand-fills facts
+  ;; Each fact is composed by a unique key -> string (description) +  a list of atoms
+  set facts-table table:make ;; all facts are stored here
+  ; 'Alice is a person'
+  table:put facts-table "fact1" (list "Alice is a person" (list "Alice" "is" "person"))
+  ; 'Bob owns a green car' has different sub-facts:
+  ; (a) Bob is a person
+  table:put facts-table "fact2" (list "Bob is a person" (list "Bob" "is" "person"))
+  ; (b) there exists a green car
+  table:put facts-table "fact3" (list "id-1 is a car" (list "id-1" "is" "car"))
+  table:put facts-table "fact4" (list "id-1 is green" (list "id-1" "color" "green"))
+  ; (c) Bob owns that car
+  table:put facts-table "fact5" (list "Bob owns id-1" (list "Bob" "own" "id-1"))
+  ; 'Alice knows Bob' TODO: revise this.
+  table:put facts-table "fact6" (list "Alice knows Bob" (list "Alice" "know" "Bob"))
+  table:put facts-table "fact7" (list "Bob knows Alice" (list "Bob" "know" "Alice"))
+  ;
+  show-facts
+end
+
+to show-facts
+  ;; shows facts table in output (if exist) or in console (if no output is defined)
+  (foreach table:keys facts-table [
+    fact-key ->
+    let sentence-and-facts table:get facts-table fact-key
+    let phrase first sentence-and-facts
+    let facts last sentence-and-facts
+    output-print (word fact-key "-> '" phrase "' (facts: " facts ")")
+    ])
+end
+
+to create-facts
+  ;; creates all facts
+  (foreach table:keys facts-table [
+    fact-key ->
+    let sentence-and-facts table:get facts-table fact-key
+    let phrase first sentence-and-facts
+    let facts last sentence-and-facts
+    output-print (word "creating" fact-key "-> '" phrase "' (facts: " facts ")")
+    let agent-list (draw-fact fact-key facts) ;; TODO: associate fact-key -> agent-list
+    ])
+end
+
+to-report create-or-label-atom [#label #fact-id #color]
+  ;; retrieves (or creates) the atom with the specified label.
+  ;; Associated #fact-id to it.
+  ;; return: the id of the retrieved/created agent.
+  ; let's try to find the atom
+  let as-list [who] of turtles with [label = #label]
+  ifelse empty? as-list [
+    ; we need to create it
+    crt 1 [
+      set color #color
+      set label #label
+      set size 2
+      setxy random-xcor random-ycor
+      set fact-ids (list #fact-id)
+    ]
+    ;; returns its id (ie, 'who')
+    let new-id (count turtles - 1)
+    show (word "CREATED " #label " (id: " new-id ") -> facts: " #fact-id)
+    report new-id
+  ]
+  [ ; else
+    let found-id first as-list
+    ; let's add this fact to its list
+    ask turtle found-id [ set fact-ids insert-item 0 fact-ids #fact-id ]
+    show (word "FOUND " #label " (id: " found-id ") -> added " #fact-id)
+    show [fact-ids] of turtle found-id
+    report found-id
+  ]
+
+end
+
+to-report draw-fact [#fact-id #fact-list]
+  ;; draws and reports the agent list
+  ; id's of agents I will just create
+  let c next-color
+  let sh next-shape
+;  foreach #fact-list [
+;    atom ->
+;    ;; returns its id (ie, 'who')
+;    let the-id create-or-label-atom atom #fact-id c
+;  ]
+  let agentids-in-fact map [
+    atom ->
+    ;; returns its id (ie, 'who')
+    create-or-label-atom atom #fact-id c
+  ] #fact-list
+  output-show agentids-in-fact
+  ; let's link these nodes
+  (foreach but-last agentids-in-fact but-first agentids-in-fact [
+    [who1 who2] -> ask turtle who1 [create-link-to turtle who2 [
+      set color c
+      set shape sh
+  ]]])
+  ; returns the ids
+  report agentids-in-fact
+end
+
+to-report next-color
+  ;; returns next color for facts
+  set color-row color-row + 1
+  if color-row = 14 [
+    set color-col (color-col + 1) mod 10
+    set color-row 0
+  ]
+  report color-col + (color-row * 10)
+end
+
+to-report next-shape
+  ;; returns next shape for links
+  set last-shape-idx ((last-shape-idx + 1) mod (length all-shapes))
+  report item last-shape-idx all-shapes
+end
+
+
+
 to layout-turtles
   if layout = "radial" and count turtles > 1 [
     let root-agent max-one-of turtles [ count my-links ]
@@ -54,14 +189,21 @@ end
 
 to setup
   clear-all
+  ; controlling shapes of links
+  set all-shapes (list "default") ;; (list "curve12" "curve25" "default")
+  set last-shape-idx -1
+  populate-facts ;; all facts are stored here
+  ;; indexes for colors
+  set color-row -1
+  set color-col 5
+  ;;
   set-default-shape turtles "circle"
-  ;; set layout "circle" ;; "spring"
-  create-turtles number-of-nodes [
-    set color blue
-    set size 2
-  ]
-  layout-turtles
-  set selected nobody
+;;  create-turtles number-of-nodes [
+;;    set color blue
+;;    set size 2
+;;  ]
+;;  layout-turtles
+;;  set selected nobody
   reset-ticks
 end
 
@@ -212,15 +354,22 @@ selected
 11
 
 MONITOR
-150
-311
-246
-356
+59
+343
+155
+388
 NIL
 count turtles
 17
 1
 11
+
+OUTPUT
+719
+22
+1169
+261
+13
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -558,6 +707,28 @@ default
 -0.2 0 0.0 1.0
 0.0 1 1.0 0.0
 0.2 0 0.0 1.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+
+curve12
+12.0
+-0.2 1 1.0 0.0
+0.0 1 1.0 0.0
+0.2 1 1.0 0.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+
+curve25
+25.0
+-0.2 1 1.0 0.0
+0.0 1 1.0 0.0
+0.2 1 1.0 0.0
 link direction
 true
 0
