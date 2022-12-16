@@ -2,6 +2,7 @@ extensions [table]
 
 turtles-own [
   fact-ids ;; list of facts this agent belong to
+  is-category ;; does this node represents a category? (eg, 'Person')
 ]
 
 globals [
@@ -13,25 +14,53 @@ globals [
   ; controlling shapes of links
   all-shapes
   last-shape-idx
+  ; counter for facts
+  num-facts
 ]
+
+to create-and-add-fact [#str-desc #subject-verb-object]
+  set num-facts (num-facts + 1)
+  table:put facts-table (word "fact" num-facts) (list #str-desc #subject-verb-object)
+end
 
 to populate-facts
   ;; hand-fills facts
   ;; Each fact is composed by a unique key -> string (description) +  a list of atoms
   set facts-table table:make ;; all facts are stored here
   ; 'Alice is a person'
-  table:put facts-table "fact1" (list "Alice is a person" (list "Alice" "is" "person"))
+  create-and-add-fact "Alice is a person" (list "Alice" "is-instance" "person")
   ; 'Bob owns a green car' has different sub-facts:
   ; (a) Bob is a person
-  table:put facts-table "fact2" (list "Bob is a person" (list "Bob" "is" "person"))
+  create-and-add-fact "Bob is a person" (list "Bob" "is-instance" "person")
   ; (b) there exists a green car
-  table:put facts-table "fact3" (list "id-1 is a car" (list "id-1" "is" "car"))
-  table:put facts-table "fact4" (list "id-1 is green" (list "id-1" "color" "green"))
+  let car-id "car-1"
+  create-and-add-fact (word car-id " is a car") (list car-id "is-instance" "car")
+  create-and-add-fact "green is a color" (list "green" "is-instance" "color")
+  create-and-add-fact (word car-id " is green") (list car-id "is" "green")
   ; (c) Bob owns that car
-  table:put facts-table "fact5" (list "Bob owns id-1" (list "Bob" "own" "id-1"))
-  ; 'Alice knows Bob' TODO: revise this.
-  table:put facts-table "fact6" (list "Alice knows Bob" (list "Alice" "know" "Bob"))
-  table:put facts-table "fact7" (list "Bob knows Alice" (list "Bob" "know" "Alice"))
+  create-and-add-fact (word "Bob owns " car-id) (list "Bob" "own" car-id)
+  ; 'Alice owns a red bag' has different sub-facts:
+  ; (a) Alice is a person: this is done above already
+  ; (b) there exists a red bag
+  let bag-id "bag-1"
+  create-and-add-fact (word bag-id " is a bag") (list bag-id "is-instance" "bag")
+  create-and-add-fact "red is a color" (list "red" "is-instance" "color")
+  create-and-add-fact (word bag-id " is red") (list bag-id "is" "red")
+  ; (c) Alice owns that bag
+  create-and-add-fact (word "Alice owns " bag-id) (list "Alice" "own" bag-id)
+  ; 'Alice knows Bob' TODO: revise this: maybe it is a SINGLE fact?
+  create-and-add-fact "Alice knows Bob" (list "Alice" "know" "Bob")
+  create-and-add-fact "Bob knows Alice" (list "Bob" "know" "Alice")
+  ; 'Luis owns a blue car' has different sub-facts:
+  ; (a) Luis is a person
+  create-and-add-fact "Luis is a person" (list "Luis" "is-instance" "person")
+  ; (b) there exists a green car
+  set car-id "car-2"
+  create-and-add-fact (word car-id " is a car") (list car-id "is-instance" "car")
+  create-and-add-fact "blue is a color" (list "blue" "is-instance" "color")
+  create-and-add-fact (word car-id " is blue") (list car-id "is" "blue")
+  ; (c) Luis owns that car
+  create-and-add-fact (word "Luis owns " car-id) (list "Luis" "own" car-id)
   ;
   show-facts
 end
@@ -54,25 +83,34 @@ to create-facts
     let sentence-and-facts table:get facts-table fact-key
     let phrase first sentence-and-facts
     let facts last sentence-and-facts
-    output-print (word "creating" fact-key "-> '" phrase "' (facts: " facts ")")
+    output-print (word "processing: " fact-key "-> '" phrase "' (facts: " facts ")")
     let agent-list (draw-fact fact-key facts) ;; TODO: associate fact-key -> agent-list
     ])
 end
 
-to-report create-or-label-atom [#label #fact-id #color]
+to-report create-or-label-atom [#label #fact-id #color #is-cat]
   ;; retrieves (or creates) the atom with the specified label.
-  ;; Associated #fact-id to it.
+  ;; Associates #fact-id to it.
   ;; return: the id of the retrieved/created agent.
   ; let's try to find the atom
   let as-list [who] of turtles with [label = #label]
   ifelse empty? as-list [
     ; we need to create it
+    let the-size 2
+    let x-cor random-xcor
+    let y-cor random-ycor
+    if #is-cat [
+      set the-size (the-size * 2)
+      set x-cor min-pxcor + (max-pxcor - min-pxcor) / 2
+      set y-cor min-pycor + (max-pycor - min-pycor) / 2
+    ]
     crt 1 [
       set color #color
       set label #label
-      set size 2
-      setxy random-xcor random-ycor
+      set size the-size
+      setxy x-cor y-cor
       set fact-ids (list #fact-id)
+      set is-category #is-cat
     ]
     ;; returns its id (ie, 'who')
     let new-id (count turtles - 1)
@@ -81,10 +119,12 @@ to-report create-or-label-atom [#label #fact-id #color]
   ]
   [ ; else
     let found-id first as-list
-    ; let's add this fact to its list
-    ask turtle found-id [ set fact-ids insert-item 0 fact-ids #fact-id ]
-    show (word "FOUND " #label " (id: " found-id ") -> added " #fact-id)
-    show [fact-ids] of turtle found-id
+    if not #is-cat [
+      ; let's add this fact to its list
+      ask turtle found-id [ set fact-ids insert-item 0 fact-ids #fact-id ]
+      show (word "FOUND " #label " (id: " found-id ") -> added " #fact-id)
+      show [fact-ids] of turtle found-id
+    ]
     report found-id
   ]
 
@@ -95,25 +135,42 @@ to-report draw-fact [#fact-id #fact-list]
   ; id's of agents I will just create
   let c next-color
   let sh next-shape
-;  foreach #fact-list [
-;    atom ->
-;    ;; returns its id (ie, 'who')
-;    let the-id create-or-label-atom atom #fact-id c
-;  ]
-  let agentids-in-fact map [
-    atom ->
-    ;; returns its id (ie, 'who')
-    create-or-label-atom atom #fact-id c
-  ] #fact-list
-  output-show agentids-in-fact
-  ; let's link these nodes
-  (foreach but-last agentids-in-fact but-first agentids-in-fact [
-    [who1 who2] -> ask turtle who1 [create-link-to turtle who2 [
-      set color c
-      set shape sh
-  ]]])
-  ; returns the ids
-  report agentids-in-fact
+  ; is this fact a 'categorization' fact?
+  ; ie, something like (A is-instance B), like: ("Alice" "is-instance" "Person")
+  let is-cat (first but-first #fact-list) = "is-instance"
+  ifelse is-cat [
+    let cat-color red
+    output-print (word #fact-list " is CATEGORIZATION")
+    let cat-label (last #fact-list)
+    let cat-who create-or-label-atom cat-label #fact-id cat-color true
+    let instance-label (first #fact-list)
+    let instance-who create-or-label-atom instance-label #fact-id c false
+    ; let's link the node to its category
+    ask turtle cat-who [create-link-to turtle instance-who [
+      set color cat-color
+      set shape "dashed"
+      set thickness .2
+    ]]
+    ; there is no "facts" associated with the categorization of the concepts,
+    ; so we don't return anything.
+    report (list )
+  ]
+  [ ;else: let's create the facts
+    output-print (word "creating: " #fact-id "-> '" #fact-list ")")
+    let agentids-in-fact map [
+      atom -> create-or-label-atom atom #fact-id c false
+    ] #fact-list
+    ; output-show agentids-in-fact ; just some logging
+    ; let's link these nodes
+    (foreach but-last agentids-in-fact but-first agentids-in-fact [
+      [who1 who2] -> ask turtle who1 [create-link-to turtle who2 [
+        set color c
+        set shape sh
+        set thickness .1
+    ]]])
+    ; returns the ids
+    report agentids-in-fact
+  ]
 end
 
 to-report next-color
@@ -134,15 +191,16 @@ end
 
 
 
-to layout-turtles
+to generic-layout-turtles
   if layout = "radial" and count turtles > 1 [
     let root-agent max-one-of turtles [ count my-links ]
     layout-radial turtles links root-agent
   ]
   if layout = "spring" [
-    let factor sqrt count turtles
+    let springy-turtles turtles
+    let factor sqrt count springy-turtles
     if factor = 0 [ set factor 1 ]
-    layout-spring turtles links (1 / factor) (14 / factor) (1.5 / factor)
+    layout-spring springy-turtles links (1 / factor) (28 / factor) (1.5 / factor)
   ]
   if layout = "circle" [
     layout-circle sort turtles max-pxcor * 0.9
@@ -155,6 +213,23 @@ to layout-turtles
   display
 end
 
+to layout-turtles
+  ;; lays out 'category' turtles in a circle, all other
+  ;; atoms as springs.
+
+  ; 'category' turtles
+  let category-turtles turtles with [is-category = true]
+  layout-circle sort category-turtles ((max-pxcor - min-pxcor) / 2) * 0.9
+;; layout-circle turtles (world-width / 2 - 2)
+  ; 'spring'
+  let springy-turtles turtles with [is-category = false]
+  let factor sqrt count springy-turtles
+  if factor = 0 [ set factor 1 ]
+  layout-spring springy-turtles links (1 / factor) (28 / factor) (1.5 / factor)
+  display
+end
+
+
 to drag-and-move
   ifelse mouse-down? [
     ; if the mouse is down then handle selecting and dragging
@@ -164,7 +239,7 @@ to drag-and-move
     set selected nobody
     reset-perspective
   ]
-  layout-turtles
+  ; layout-turtles
   display ; update the display
 end
 
@@ -189,6 +264,7 @@ end
 
 to setup
   clear-all
+;;  resize-world 0 100 0 100
   ; controlling shapes of links
   set all-shapes (list "default") ;; (list "curve12" "curve25" "default")
   set last-shape-idx -1
@@ -197,13 +273,18 @@ to setup
   set color-row -1
   set color-col 5
   ;;
+  set num-facts 0
+  ;;
   set-default-shape turtles "circle"
 ;;  create-turtles number-of-nodes [
 ;;    set color blue
 ;;    set size 2
 ;;  ]
-;;  layout-turtles
-;;  set selected nobody
+  create-facts
+  repeat 50 [
+    layout-turtles
+  ]
+  set selected nobody
   reset-ticks
 end
 
@@ -225,13 +306,13 @@ end
 ; copyright and related or neighboring rights to this model.
 @#$#@#$#@
 GRAPHICS-WINDOW
-196
+216
 10
-614
-429
+886
+681
 -1
 -1
-10.0
+6.5545
 1
 10
 1
@@ -241,10 +322,10 @@ GRAPHICS-WINDOW
 0
 0
 1
--20
-20
--20
-20
+0
+100
+0
+100
 1
 1
 1
@@ -365,11 +446,28 @@ count turtles
 11
 
 OUTPUT
-719
-22
-1169
-261
+891
 13
+1508
+591
+13
+
+BUTTON
+47
+478
+150
+511
+create facts
+NIL
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
 
 @#$#@#$#@
 ## WHAT IS IT?
@@ -729,6 +827,17 @@ curve25
 -0.2 1 1.0 0.0
 0.0 1 1.0 0.0
 0.2 1 1.0 0.0
+link direction
+true
+0
+Line -7500403 true 150 150 90 180
+Line -7500403 true 150 150 210 180
+
+dashed
+0.0
+-0.2 0 0.0 1.0
+0.0 1 4.0 4.0
+0.2 0 0.0 1.0
 link direction
 true
 0
