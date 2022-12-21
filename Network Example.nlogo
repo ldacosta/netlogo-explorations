@@ -3,10 +3,12 @@ extensions [table]
 turtles-own [
   fact-ids ;; list of facts this agent belong to
   is-category ;; does this node represents a category? (eg, 'Person')
+  highlighted ;; when true, is highlighted
 ]
 
 globals [
   facts-table ;; all facts are stored here
+  facts-agents-table ;; correspondence fact-id -> agents
   selected
   ; controlling colors
   color-row
@@ -18,6 +20,49 @@ globals [
   num-facts
 ]
 
+;; ********** shapes and colors of facts nodes
+to-report unselected-concept-shape
+  report "circle 2"
+end
+
+to-report selected-concept-shape
+  report "circle"
+end
+
+to-report unselected-concept-color
+  report gray
+end
+
+to-report selected-concept-color
+  report blue
+end
+
+to-report unselected-concept-size
+  report 2
+end
+
+to-report selected-concept-size-ratio
+  ;; when a concept is selected, this is how much larger it will get
+  report 1.25
+end
+
+to-report unselected-cat-color
+  report red
+end
+
+to-report selected-cat-color
+  report unselected-cat-color
+end
+
+to-report unselected-cat-shape
+  report unselected-concept-shape
+end
+
+to-report selected-cat-shape
+  report selected-concept-shape
+end
+
+;; **********
 to create-and-add-fact [#str-desc #subject-verb-object]
   set num-facts (num-facts + 1)
   table:put facts-table (word "fact" num-facts) (list #str-desc #subject-verb-object)
@@ -27,6 +72,7 @@ to populate-facts
   ;; hand-fills facts
   ;; Each fact is composed by a unique key -> string (description) +  a list of atoms
   set facts-table table:make ;; all facts are stored here
+  set facts-agents-table table:make ;; all facts <-> agents are stored here
   ; 'Alice is a person'
   create-and-add-fact "Alice is a person" (list "Alice" "is-instance" "person")
   ; 'Bob owns a green car' has different sub-facts:
@@ -83,8 +129,11 @@ to create-facts
     let sentence-and-facts table:get facts-table fact-key
     let phrase first sentence-and-facts
     let facts last sentence-and-facts
-    output-print (word "processing: " fact-key "-> '" phrase "' (facts: " facts ")")
-    let agent-list (draw-fact fact-key facts) ;; TODO: associate fact-key -> agent-list
+    print (word "processing: " fact-key "-> '" phrase "' (facts: " facts ")")
+    let agent-list (draw-fact fact-key facts)
+    ;; associate fact-key -> agent-list
+    table:put facts-agents-table fact-key agent-list
+    print (word "added: " fact-key "-> agents: " agent-list)
     ])
 end
 
@@ -96,7 +145,7 @@ to-report create-or-label-atom [#label #fact-id #color #is-cat]
   let as-list [who] of turtles with [label = #label]
   ifelse empty? as-list [
     ; we need to create it
-    let the-size 2
+    let the-size unselected-concept-size
     let x-cor random-xcor
     let y-cor random-ycor
     if #is-cat [
@@ -108,9 +157,11 @@ to-report create-or-label-atom [#label #fact-id #color #is-cat]
       set color #color
       set label #label
       set size the-size
+      set shape unselected-concept-shape
       setxy x-cor y-cor
       set fact-ids (list #fact-id)
       set is-category #is-cat
+      set highlighted false
     ]
     ;; returns its id (ie, 'who')
     let new-id (count turtles - 1)
@@ -133,27 +184,25 @@ end
 to-report draw-fact [#fact-id #fact-list]
   ;; draws and reports the agent list
   ; id's of agents I will just create
-  let c next-color
+  let c unselected-concept-color ;; next-color
   let sh next-shape
   ; is this fact a 'categorization' fact?
   ; ie, something like (A is-instance B), like: ("Alice" "is-instance" "Person")
   let is-cat (first but-first #fact-list) = "is-instance"
   ifelse is-cat [
-    let cat-color red
     output-print (word #fact-list " is CATEGORIZATION")
     let cat-label (last #fact-list)
-    let cat-who create-or-label-atom cat-label #fact-id cat-color true
+    let cat-who create-or-label-atom cat-label #fact-id unselected-cat-color true
     let instance-label (first #fact-list)
     let instance-who create-or-label-atom instance-label #fact-id c false
     ; let's link the node to its category
     ask turtle cat-who [create-link-to turtle instance-who [
-      set color cat-color
+      set color unselected-cat-color
       set shape "dashed"
       set thickness .2
     ]]
-    ; there is no "facts" associated with the categorization of the concepts,
-    ; so we don't return anything.
-    report (list )
+    ; "facts" associated with the categorization of the concepts,
+    report (list cat-who instance-who)
   ]
   [ ;else: let's create the facts
     output-print (word "creating: " #fact-id "-> '" #fact-list ")")
@@ -173,6 +222,85 @@ to-report draw-fact [#fact-id #fact-list]
   ]
 end
 
+
+;; (un-) highlighting
+to turn-on [#ag-who #propagate]
+  turn "on" #ag-who #propagate
+end
+
+to turn-off [#ag-who #propagate]
+  turn "off" #ag-who #propagate
+end
+
+to turn [#on-or-off #ag-who #propagate]
+  if [highlighted] of turtle #ag-who = not (#on-or-off = "on") [
+    let is-cat ([is-category] of turtle #ag-who = true)
+    let sh ""
+    let co ""
+    let sz ""
+    ifelse #on-or-off = "on" [
+      set sh (ifelse-value is-cat [selected-cat-shape] [selected-concept-shape])
+      set co (ifelse-value is-cat [selected-cat-color] [selected-concept-color])
+      set sz ([size] of turtle #ag-who) * selected-concept-size-ratio
+    ] [
+      set sh (ifelse-value is-cat [unselected-cat-shape] [unselected-concept-shape])
+      set co (ifelse-value is-cat [unselected-cat-color] [unselected-concept-color])
+      set sz ([size] of turtle #ag-who) / selected-concept-size-ratio
+    ]
+    ; let's do it!
+    ask turtle #ag-who [
+      set highlighted #on-or-off = "on"
+      set shape sh
+      set color co
+      set size sz
+    ]
+    print (word (ifelse-value #on-or-off = "on" [""] ["un-"]) "highlighted concept " #ag-who)
+    if (#propagate = true) and is-cat [
+      ; get all facts with this 'who' as a head, and (un-)highlight all of them.
+      (foreach table:keys facts-agents-table [
+        fact-key ->
+        let agents table:get facts-agents-table fact-key
+        if first agents = #ag-who [
+          turn #on-or-off last agents true ; #propagate
+        ]
+      ])
+    ]
+  ]
+end
+
+to turn-on-label [#ag-label]
+  let as-list [who] of turtles with [label = #ag-label]
+  ifelse empty? as-list [
+    print (word "Agent with label '" #ag-label "' does not exist")
+  ] [
+    turn-on (first as-list) true ; ALWAYS 'propagate'
+  ]
+end
+
+
+to highlight-fact
+  let #fact-id user-input "which fact?"
+  let i table:get-or-default facts-agents-table #fact-id "not-there"
+  ifelse i = "not-there" [
+    print (word "There is no FACT with id '" #fact-id "'")
+  ] [
+    let agents-tagged table:get facts-agents-table #fact-id
+    print (word "Agents: " agents-tagged)
+    foreach agents-tagged [ ag-who -> turn-on ag-who false] ; we don't propagate as we want the EXACT fact
+  ]
+end
+
+to highlight-concept
+  let #concept user-input "which concept?"
+  turn-on-label #concept
+end
+
+to unhighlight-all
+  print "unhighlight all"
+  foreach [who] of turtles [ #ag-who -> turn-off #ag-who true ]
+end
+
+;;
 to-report next-color
   ;; returns next color for facts
   set color-row color-row + 1
@@ -264,7 +392,6 @@ end
 
 to setup
   clear-all
-;;  resize-world 0 100 0 100
   ; controlling shapes of links
   set all-shapes (list "default") ;; (list "curve12" "curve25" "default")
   set last-shape-idx -1
@@ -275,16 +402,14 @@ to setup
   ;;
   set num-facts 0
   ;;
-  set-default-shape turtles "circle"
-;;  create-turtles number-of-nodes [
-;;    set color blue
-;;    set size 2
-;;  ]
+  set-default-shape turtles unselected-concept-shape
+  ;;
   create-facts
-  repeat 50 [
+  repeat 50 [ ; just to wait for it to converge on a shape
     layout-turtles
   ]
   set selected nobody
+  ;; done!
   reset-ticks
 end
 
@@ -390,7 +515,7 @@ number-of-links
 number-of-links
 0
 100
-41.0
+78.0
 1
 1
 NIL
@@ -453,12 +578,46 @@ OUTPUT
 13
 
 BUTTON
-47
-478
-150
-511
-create facts
+55
+435
+168
+468
+highlight fact
+highlight-fact
 NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+81
+527
+221
+560
+highlight concept
+highlight-concept
+NIL
+1
+T
+OBSERVER
+NIL
+NIL
+NIL
+NIL
+1
+
+BUTTON
+60
+581
+204
+614
+clear all highlights
+unhighlight-all
 NIL
 1
 T
